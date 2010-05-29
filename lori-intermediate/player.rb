@@ -10,9 +10,7 @@ class Player
     @warrior = warrior
     
     scan
-    
-    # Primitive state machine
-    @actions.any? {|a| self.send a}
+    @actions.any? {|a| self.send a} # Primitive state machine
   end
   
   private
