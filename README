@@ -3,10 +3,10 @@ A version of my AI for ruby-warrior tuned for high scoring in the epic tower.
 ---
 CONGRATULATIONS! You have climbed to the top of the tower and rescued the fair maiden Ruby.
 Level Score: 76
-Time Bonus: 33
+Time Bonus: 35
 Clear Bonus: 22
 Level Grade: A
-Total Score: 543 + 131 = 674
+Total Score: 561 + 133 = 694
 Your average grade for this tower is: A
 
   Level 1: S
@@ -16,3 +16,4 @@ Your average grade for this tower is: A
   Level 5: A
   Level 6: S
   Level 7: A
+

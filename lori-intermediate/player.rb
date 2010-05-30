@@ -1,26 +1,21 @@
 class Player
   def initialize
     @directions = {:left => :right, :right => :left, :forward => :backward, :backward => :forward}
-    @actions = [:bomb!, :bind!, :heal!, :fight!, :rescue!, :seek!, :leave!]
+    @actions = [:scan, :bomb!, :bind!, :heal!, :fight!, :rescue!, :navigate!]
     @target = nil
   end
   
   def play_turn(warrior)
     @max_health ||= warrior.health
     @warrior = warrior
-    
-    scan
-    @actions.any? {|a| self.send a} # Primitive state machine
+
+    # Primitive state machine
+    @actions.any? {|a| self.send a} 
   end
   
   private
     # Gather information about the environment.
     def scan
-      if (!@target.nil?) && @warrior.feel(@target).empty?
-        @target = nil 
-        @combat = nil
-      end
-      
       @interests = @warrior.listen.reject { |i| i.stairs? }
       @enemies = {}
       @captives = {}
@@ -32,31 +27,34 @@ class Player
           @captives[d] = square
         end
       end
+      @target = @enemies.keys.first
+      @combat = !@enemies.empty?
+      false
     end
     
     # Mez a mob to prevent it from doing damage.
     def bind!
       unbound = @enemies.reject {|k,v| v.captive? || @warrior.direction_of(v) == @target}
       return false if unbound.empty?
-      @warrior.bind!(unbound.keys.first)
+      @warrior.bind! unbound.keys.first
     end
     
-    # Rescue captives with bombs ASAP.
+    # Deal with bombs as quickly as possible.
     def bomb!
       bombs = @interests.select {|i| i.ticking?}
       return false if bombs.empty?
       
       direction, square = @captives.select {|k,v| v.ticking?}.first
-      unless direction.nil?
+      if direction
         @warrior.rescue!(direction)
       else       
         bomb_direction = @warrior.direction_of bombs.first
         desired = path_to bomb_direction
-        if desired.nil?
+        if desired
+          @warrior.walk! desired
+        else
           @target = bomb_direction
           bind! or fight!
-        else
-          @warrior.walk! desired
         end
       end
     end
@@ -70,35 +68,33 @@ class Player
     # Attack any local targets
     def fight!
       return false if @enemies.empty?
-      @target ||= @enemies.keys.first
-      @combat = true
       @warrior.attack! @target
     end
       
-    # Optimized for score vs survivability
-    #   - only heal in combat
-    #   - keep health between 1/6th and 1/2rd
+    # Optimized heal for high score
+    #   - only activates during combat
+    #   - heals inbetween active targets
+    #   - pauses combat if health is too low
+    #   - don't heal past about half health (statistically best for score)
     def heal!
+      health_limit = @max_health / 2
+      health_limit = @max_health / 1.9  if @interests.reject {|i| i.character == "C"}.count > 1
       if @combat
-        if ((!@target.nil?) && @warrior.health <= (@max_health / 6))
+        if !@warrior.feel(@target).captive? && @warrior.health <= (@max_health / 7)
           @warrior.bind!(@target)
-          @target = nil
-          true
-        elsif @target.nil? && @warrior.health < (@max_health / 2)
+        elsif @warrior.feel(@target).captive? && @warrior.health < health_limit
           @warrior.rest!
         end
       end
     end
     
-    # Find areas of interest (mobs, captives)
-    def seek!
-      return false if @interests.empty?
-      @warrior.walk! path_to(@warrior.direction_of @interests.first)
-    end
-    
-    # Leave the current level
-    def leave!
-      @warrior.walk! @warrior.direction_of_stairs
+    # Find areas of interest (mobs, captives, stairs)
+    def navigate!
+      unless @interests.empty?
+        @warrior.walk! path_to(@warrior.direction_of @interests.first)
+      else
+        @warrior.walk! @warrior.direction_of_stairs
+      end
     end
     
     # Simple pathing algorithm, returned the most relavent unblocked path.
