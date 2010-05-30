@@ -1,22 +1,34 @@
 class Player
   def initialize
     @directions = {:left => :right, :right => :left, :forward => :backward, :backward => :forward}
-    @actions = [:scan, :bomb!, :bind!, :heal!, :fight!, :rescue!, :navigate!]
-    @target = nil
+    
+    # State machines
+    @clear_level = [:crowd_control!, :heal!, :attack!, :rescue_captive!, :navigate!]
+    @disarm_bomb = [:rescue_captive!, :navigate!, :crowd_control!, :attack!]
   end
   
   def play_turn(warrior)
-    @max_health ||= warrior.health
-    @warrior = warrior
-
-    # Primitive state machine
-    @actions.any? {|a| self.send a} 
+    setup(warrior)
+    unless @bombs.empty?
+      run @disarm_bomb
+    else
+      run @clear_level
+    end
   end
   
   private
-    # Gather information about the environment.
-    def scan
+    # Setup the environment for the level
+    def setup(warrior)
+      @warrior = warrior
+      @max_health ||= @warrior.health
       @interests = @warrior.listen.reject { |i| i.stairs? }
+      @bombs = @interests.select {|i| i.ticking?}
+      setup_local
+      @target = @warrior.direction_of @bombs.first unless @bombs.empty?
+    end
+    
+    # Figure out whats directly local around the AI
+    def setup_local
       @enemies = {}
       @captives = {}
       @directions.keys.each do |d| 
@@ -29,46 +41,27 @@ class Player
       end
       @target = @enemies.keys.first
       @combat = !@enemies.empty?
-      false
     end
     
-    # Mez a mob to prevent it from doing damage.
-    def bind!
+    # Bind local mobs except the target.
+    def crowd_control!
       unbound = @enemies.reject {|k,v| v.captive? || @warrior.direction_of(v) == @target}
-      return false if unbound.empty?
-      @warrior.bind! unbound.keys.first
+      @warrior.bind! unbound.keys.first unless unbound.empty?
     end
     
-    # Deal with bombs as quickly as possible.
-    def bomb!
-      bombs = @interests.select {|i| i.ticking?}
-      return false if bombs.empty?
-      
-      direction, square = @captives.select {|k,v| v.ticking?}.first
-      if direction
-        @warrior.rescue!(direction)
-      else       
-        bomb_direction = @warrior.direction_of bombs.first
-        desired = path_to bomb_direction
-        if desired
-          @warrior.walk! desired
-        else
-          @target = bomb_direction
-          bind! or fight!
-        end
+    # Save a local captive
+    def rescue_captive!
+      unless @bombs.empty?
+        direction, square = @captives.select {|k,v| v.ticking?}.first
+        @warrior.rescue! direction if direction
+      else
+        @warrior.rescue! @captives.keys.first unless @captives.empty?
       end
     end
     
-    # Save a captive
-    def rescue!
-      return false if @captives.empty?
-      @warrior.rescue! @captives.keys.first
-    end
-    
-    # Attack any local targets
-    def fight!
-      return false if @enemies.empty?
-      @warrior.attack! @target
+    # Fight the chosen target
+    def attack!
+      @warrior.attack! @target if @target
     end
       
     # Optimized heal for high score
@@ -88,21 +81,34 @@ class Player
       end
     end
     
-    # Find areas of interest (mobs, captives, stairs)
+    # Find areas of interest (bombs, mobs, captives, stairs)
     def navigate!
-      unless @interests.empty?
-        @warrior.walk! path_to(@warrior.direction_of @interests.first)
+      unless @bombs.empty?
+        desired_direction = path_to @warrior.direction_of @bombs.first
+        @warrior.walk! desired_direction if desired_direction
       else
-        @warrior.walk! @warrior.direction_of_stairs
+        unless @interests.empty?
+          @warrior.walk! path_to @warrior.direction_of @interests.first
+        else
+          @warrior.walk! @warrior.direction_of_stairs
+        end
       end
     end
     
-    # Simple pathing algorithm, returns the most relavent unblocked path.
+    # Pathing algorithm.
+    #   - avoids obstructions
+    #   - doesn't double back
+    #   - not very smart otherwise ;)
     def path_to(direction)
       unwanted = [:stairs?, :wall?, :enemy?, :captive?]
-      directions = ([direction]+@directions.keys).reject do |d| 
-        d == @directions[direction] || unwanted.any? {|u| @warrior.feel(d).send u }
-      end
-      directions.first
+      ([direction]+@directions.keys).reject do |d| 
+        d == @directions[direction] || unwanted.any? {|u| @warrior.feel(d).send u}
+      end.first
+    end
+    
+    # Run a state machine.
+    #   - steps through each state until true is returned.
+    def run(machine)
+      machine.any? {|a| self.send a}
     end
 end
