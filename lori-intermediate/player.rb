@@ -97,7 +97,7 @@ class Player
       end
     end
     
-    # Simple pathing algorithm, returned the most relavent unblocked path.
+    # Simple pathing algorithm, returns the most relavent unblocked path.
     def path_to(direction)
       unwanted = [:stairs?, :wall?, :enemy?, :captive?]
       directions = ([direction]+@directions.keys).reject do |d| 
